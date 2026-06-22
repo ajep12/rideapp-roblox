@@ -138,6 +138,10 @@ function RideApp.Start(HQ)
 		HQ:SetAttribute("CloseReason", reason)
 	end
 
+	if config.StartUpStatus == "Open" then
+		OpenQueue()
+	end
+	
 	local function forceCloseIfNeeded()
 		if isAfterCloseTime() and Status == "Open" then
 			CloseQueue("Today")
