@@ -1,3 +1,4 @@
+```lua
 local Vault = require(89336655405102)
 
 local RideApp = {}
@@ -13,7 +14,7 @@ function RideApp.Start(HQ)
 		vaultUUID = "a385fb95-68de-450b-8b05-1551d4703676",
 		blockStudio = false,
 		alerts = true
-		}) then
+	}) then
 		print("RideApp | So, someone has found an unlicensed product!")
 
 		HQ:Destroy()
@@ -39,15 +40,23 @@ function RideApp.Start(HQ)
 
 	HQ:SetAttribute("RideGroup", config.Group)
 
+	--------------------------------------------------
+	-- TIME
+	--------------------------------------------------
+
 	local function getLocalTime()
 		local offset = parkConfig.TimezoneOffset.Value
 		local utc = os.time()
 		local adjusted = utc + (offset * 3600)
+
 		return os.date("*t", adjusted)
 	end
 
 	local function getTimes()
-		return parkConfig.OpenHour.Value, parkConfig.OpenMinute.Value, parkConfig.CloseHour.Value, parkConfig.CloseMinute.Value
+		return parkConfig.OpenHour.Value,
+			parkConfig.OpenMinute.Value,
+			parkConfig.CloseHour.Value,
+			parkConfig.CloseMinute.Value
 	end
 
 	local function isWithinOperatingHours()
@@ -65,8 +74,15 @@ function RideApp.Start(HQ)
 		local _, _, ch, cm = getTimes()
 		local t = getLocalTime()
 
-		return (t.hour * 60 + t.min) >= (ch * 60 + cm)
+		local current = t.hour * 60 + t.min
+		local close = ch * 60 + cm
+
+		return current >= close
 	end
+
+	--------------------------------------------------
+	-- DISPLAY
+	--------------------------------------------------
 
 	local function updateThroughputDisplay()
 		Tablet.Application.NumberOfRiders.Number.Text = tostring(Throughput)
@@ -85,22 +101,46 @@ function RideApp.Start(HQ)
 		local oh, om, ch, cm = getTimes()
 
 		Tablet.Application.Heading.OpeningTimes.Text =
-			string.format("Open: %02d:%02d | Close: %02d:%02d", oh, om, ch, cm)
+			string.format(
+				"Open: %02d:%02d | Close: %02d:%02d",
+				oh,
+				om,
+				ch,
+				cm
+			)
 	end
 
+	--------------------------------------------------
+	-- OPEN RIDE
+	--------------------------------------------------
+
 	local function OpenQueue()
-		if not isWithinOperatingHours() then return end
+		-- CloseLock controls whether staff are allowed
+		-- to manually open outside normal operating hours.
+		--
+		-- TRUE  = normal operating hours enforced
+		-- FALSE = staff can reopen after closing
+
+		if config.CloseLock == true then
+			if not isWithinOperatingHours() then
+				return
+			end
+		end
 
 		Status = "Open"
+
 		HQ:SetAttribute("AttractionStatus", "Open")
 
 		Barrier.CanCollide = false
 
-		Tablet.Application.Heading.AttractionStatus.BackgroundColor3 = Color3.fromRGB(93, 214, 93)
+		Tablet.Application.Heading.AttractionStatus.BackgroundColor3 =
+			Color3.fromRGB(93, 214, 93)
+
 		Tablet.Application.Heading.AttractionStatus.Text = "Open"
 
 		Tablet.Application.Buttons.OpenRide.Interactable = false
 		Tablet.Application.Buttons.CloseRide.Interactable = true
+
 		Tablet.Application.Buttons.OpenRide.ImageTransparency = 0.7
 		Tablet.Application.Buttons.CloseRide.ImageTransparency = 0
 
@@ -109,23 +149,35 @@ function RideApp.Start(HQ)
 		updateQueueDisplay()
 	end
 
+	--------------------------------------------------
+	-- CLOSE RIDE
+	--------------------------------------------------
+
 	local function CloseQueue(reason)
 		Status = "Closed"
 
 		local actualreason = reason
+
 		HQ:SetAttribute("AttractionStatus", "Closed")
 
 		Barrier.CanCollide = true
 
-		if reason ~= "Today" and reason ~= "Opening Soon" and reason ~= "Weather Delay" then
+		if reason ~= "Today"
+			and reason ~= "Opening Soon"
+			and reason ~= "Weather Delay" then
+
 			reason = "Back Soon!"
 		end
 
-		Tablet.Application.Heading.AttractionStatus.BackgroundColor3 = Color3.fromRGB(255, 95, 89)
-		Tablet.Application.Heading.AttractionStatus.Text = "Closed - " .. actualreason
+		Tablet.Application.Heading.AttractionStatus.BackgroundColor3 =
+			Color3.fromRGB(255, 95, 89)
+
+		Tablet.Application.Heading.AttractionStatus.Text =
+			"Closed - " .. actualreason
 
 		Tablet.Application.Buttons.OpenRide.ImageTransparency = 0
 		Tablet.Application.Buttons.CloseRide.ImageTransparency = 0.7
+
 		Tablet.Application.Buttons.CloseRide.Interactable = false
 		Tablet.Application.Buttons.OpenRide.Interactable = true
 
@@ -138,10 +190,19 @@ function RideApp.Start(HQ)
 		HQ:SetAttribute("CloseReason", reason)
 	end
 
-	if config.StartUpStatus == "Open" then
-		OpenQueue()
-	end
-	
+	--------------------------------------------------
+	-- AUTOMATIC CLOSING
+	--------------------------------------------------
+
+	-- IMPORTANT:
+	-- This ALWAYS auto-closes the attraction at closing time.
+	--
+	-- CloseLock does NOT disable automatic closing.
+	-- ClockLock does NOT disable automatic closing.
+	--
+	-- CloseLock only controls whether staff can reopen
+	-- outside normal operating hours.
+
 	local function forceCloseIfNeeded()
 		if isAfterCloseTime() and Status == "Open" then
 			CloseQueue("Today")
@@ -151,29 +212,64 @@ function RideApp.Start(HQ)
 	task.spawn(function()
 		while HQ.Parent do
 			forceCloseIfNeeded()
+
 			task.wait(60)
 		end
 	end)
 
+	--------------------------------------------------
+	-- STARTUP STATUS
+	--------------------------------------------------
+
+	if config.StartUpStatus == "Open" then
+		OpenQueue()
+	end
+
+	--------------------------------------------------
+	-- QUEUE
+	--------------------------------------------------
+
 	local function AddQueue()
-		if not isWithinOperatingHours() then return end
+		-- When CloseLock is enabled, queue controls
+		-- cannot be used while the ride is closed.
+		--
+		-- When CloseLock is disabled, staff can still
+		-- edit the queue while closed.
+
+		if config.CloseLock == true then
+			if Status == "Closed" then
+				return
+			end
+		end
 
 		QT += 5
+
 		HQ:SetAttribute("AttractionQTime", QT)
 
-		Tablet.Application.QueueTimes.QueueTime.Text = tostring(QT)
+		Tablet.Application.QueueTimes.QueueTime.Text =
+			tostring(QT)
+
 		updateQueueDisplay()
 	end
 
 	local function SubtractQueue()
-		if QT <= 0 then return end
+		if QT <= 0 then
+			return
+		end
 
 		QT -= 5
+
 		HQ:SetAttribute("AttractionQTime", QT)
 
-		Tablet.Application.QueueTimes.QueueTime.Text = tostring(QT)
+		Tablet.Application.QueueTimes.QueueTime.Text =
+			tostring(QT)
+
 		updateQueueDisplay()
 	end
+
+	--------------------------------------------------
+	-- CLOSURE MENU
+	--------------------------------------------------
 
 	local function PromptClosure()
 		local frame = Tablet.Application.ClosureFrame
@@ -246,29 +342,45 @@ function RideApp.Start(HQ)
 		end)
 	end
 
+	--------------------------------------------------
+	-- CAPACITY
+	--------------------------------------------------
+
 	local function updateCapacityDisplay()
-		Tablet.Application.RideCapacity.Unit.Text = tostring(unitCount)
-		Tablet.Application.RideCapacity.Seats.Text = tostring(totalSeats)
+		Tablet.Application.RideCapacity.Unit.Text =
+			tostring(unitCount)
+
+		Tablet.Application.RideCapacity.Seats.Text =
+			tostring(totalSeats)
 	end
 
 	local function addSeat()
-		if totalSeats >= maxSeats then return end
+		if totalSeats >= maxSeats then
+			return
+		end
 
 		totalSeats += 1
+
 		updateCapacityDisplay()
 	end
 
 	local function removeSeat()
-		if totalSeats <= 0 then return end
+		if totalSeats <= 0 then
+			return
+		end
 
 		totalSeats -= 1
+
 		updateCapacityDisplay()
 	end
 
 	local function addUnit()
-		if unitCount >= config.UnitCount then return end
+		if unitCount >= config.UnitCount then
+			return
+		end
 
 		unitCount += 1
+
 		totalSeats += config.SeatsPerUnit
 
 		if totalSeats > maxSeats then
@@ -279,9 +391,12 @@ function RideApp.Start(HQ)
 	end
 
 	local function removeUnit()
-		if unitCount <= 0 then return end
+		if unitCount <= 0 then
+			return
+		end
 
 		unitCount -= 1
+
 		totalSeats -= config.SeatsPerUnit
 
 		if totalSeats < 0 then
@@ -304,40 +419,73 @@ function RideApp.Start(HQ)
 
 		unitCount = 0
 		totalSeats = 0
+
 		updateCapacityDisplay()
 	end
 
+	--------------------------------------------------
+	-- THROUGHPUT
+	--------------------------------------------------
+
 	local function appendDigit(digit)
-		if Status == "Closed" then return end
-		if Throughput >= 999 then return end
+		if config.CloseLock == true then
+			if Status == "Closed" then
+				return
+			end
+		end
+
+		if Throughput >= 999 then
+			return
+		end
 
 		local newValue
 
 		if Throughput == 0 then
 			newValue = tonumber(digit)
 		else
-			newValue = tonumber(tostring(Throughput) .. digit)
+			newValue =
+				tonumber(tostring(Throughput) .. digit)
 		end
 
-		if #tostring(newValue) > 3 then return end
+		if #tostring(newValue) > 3 then
+			return
+		end
 
 		Throughput = newValue
+
 		updateThroughputDisplay()
 	end
 
 	local function addThroughput()
-		if Status == "Closed" then return end
-		if Throughput >= 999 then return end
+		if config.CloseLock == true then
+			if Status == "Closed" then
+				return
+			end
+		end
+
+		if Throughput >= 999 then
+			return
+		end
 
 		Throughput += 1
+
 		updateThroughputDisplay()
 	end
 
 	local function backspaceThroughput()
-		if Status == "Closed" then return end
+		if config.CloseLock == true then
+			if Status == "Closed" then
+				return
+			end
+		end
 
 		local text = tostring(Throughput)
-		text = string.sub(text, 1, #text - 1)
+
+		text = string.sub(
+			text,
+			1,
+			#text - 1
+		)
 
 		if text == "" then
 			Throughput = 0
@@ -349,16 +497,28 @@ function RideApp.Start(HQ)
 	end
 
 	local function submitThroughput()
-		if Status == "Closed" then return end
-		if Throughput == 0 then return end
+		if config.CloseLock == true then
+			if Status == "Closed" then
+				return
+			end
+		end
+
+		if Throughput == 0 then
+			return
+		end
 
 		print("\n=== " .. config.AttractionName .. " RIDER LOG ===")
 		print("Riders:", Throughput)
 		print("==========================")
 
 		Throughput = 0
+
 		updateThroughputDisplay()
 	end
+
+	--------------------------------------------------
+	-- INITIAL STATUS
+	--------------------------------------------------
 
 	if config.StartUpStatus == "Closed" then
 		CloseQueue("Opening Soon")
@@ -366,78 +526,173 @@ function RideApp.Start(HQ)
 		OpenQueue()
 	end
 
-	Tablet.Application.Heading.TextLabel.Text = config.AttractionName
-	HQ:SetAttribute("AttractionName", config.AttractionName)
+	Tablet.Application.Heading.TextLabel.Text =
+		config.AttractionName
+
+	HQ:SetAttribute(
+		"AttractionName",
+		config.AttractionName
+	)
 
 	updateOpeningTimesDisplay()
 	updateCapacityDisplay()
 	updateThroughputDisplay()
 
-	parkConfig.OpenHour:GetPropertyChangedSignal("Value"):Connect(updateOpeningTimesDisplay)
-	parkConfig.OpenMinute:GetPropertyChangedSignal("Value"):Connect(updateOpeningTimesDisplay)
-	parkConfig.CloseHour:GetPropertyChangedSignal("Value"):Connect(updateOpeningTimesDisplay)
-	parkConfig.CloseMinute:GetPropertyChangedSignal("Value"):Connect(updateOpeningTimesDisplay)
+	--------------------------------------------------
+	-- OPENING TIME UPDATES
+	--------------------------------------------------
 
-	Tablet.Application.RideCapacity.AddUnit.MouseButton1Click:Connect(addUnit)
-	Tablet.Application.RideCapacity.SubtractUnit.MouseButton1Click:Connect(removeUnit)
-	Tablet.Application.RideCapacity.AddSeats.MouseButton1Click:Connect(addSeat)
-	Tablet.Application.RideCapacity.SubtractSeats.MouseButton1Click:Connect(removeSeat)
-	Tablet.Application.RideCapacity.Submit.MouseButton1Click:Connect(submitCapacity)
+	parkConfig.OpenHour:GetPropertyChangedSignal("Value")
+		:Connect(updateOpeningTimesDisplay)
 
-	Tablet.Application.NumberOfRiders.Plus.MouseButton1Click:Connect(addThroughput)
+	parkConfig.OpenMinute:GetPropertyChangedSignal("Value")
+		:Connect(updateOpeningTimesDisplay)
 
-	Tablet.Application.NumberOfRiders.Numbers.One.MouseButton1Click:Connect(function()
-		appendDigit(1)
-	end)
+	parkConfig.CloseHour:GetPropertyChangedSignal("Value")
+		:Connect(updateOpeningTimesDisplay)
 
-	Tablet.Application.NumberOfRiders.Numbers.Two.MouseButton1Click:Connect(function()
-		appendDigit(2)
-	end)
+	parkConfig.CloseMinute:GetPropertyChangedSignal("Value")
+		:Connect(updateOpeningTimesDisplay)
 
-	Tablet.Application.NumberOfRiders.Numbers.Three.MouseButton1Click:Connect(function()
-		appendDigit(3)
-	end)
+	--------------------------------------------------
+	-- CAPACITY BUTTONS
+	--------------------------------------------------
 
-	Tablet.Application.NumberOfRiders.Numbers.Four.MouseButton1Click:Connect(function()
-		appendDigit(4)
-	end)
+	Tablet.Application.RideCapacity.AddUnit
+		.MouseButton1Click
+		:Connect(addUnit)
 
-	Tablet.Application.NumberOfRiders.Numbers.Five.MouseButton1Click:Connect(function()
-		appendDigit(5)
-	end)
+	Tablet.Application.RideCapacity.SubtractUnit
+		.MouseButton1Click
+		:Connect(removeUnit)
 
-	Tablet.Application.NumberOfRiders.Numbers.Six.MouseButton1Click:Connect(function()
-		appendDigit(6)
-	end)
+	Tablet.Application.RideCapacity.AddSeats
+		.MouseButton1Click
+		:Connect(addSeat)
 
-	Tablet.Application.NumberOfRiders.Numbers.Seven.MouseButton1Click:Connect(function()
-		appendDigit(7)
-	end)
+	Tablet.Application.RideCapacity.SubtractSeats
+		.MouseButton1Click
+		:Connect(removeSeat)
 
-	Tablet.Application.NumberOfRiders.Numbers.Eight.MouseButton1Click:Connect(function()
-		appendDigit(8)
-	end)
+	Tablet.Application.RideCapacity.Submit
+		.MouseButton1Click
+		:Connect(submitCapacity)
 
-	Tablet.Application.NumberOfRiders.Numbers.Nine.MouseButton1Click:Connect(function()
-		appendDigit(9)
-	end)
+	--------------------------------------------------
+	-- THROUGHPUT BUTTONS
+	--------------------------------------------------
 
-	Tablet.Application.NumberOfRiders.Numbers.Zero.MouseButton1Click:Connect(function()
-		if Status == "Closed" then return end
-		if Throughput == 0 then return end
+	Tablet.Application.NumberOfRiders.Plus
+		.MouseButton1Click
+		:Connect(addThroughput)
 
-		appendDigit(0)
-	end)
+	Tablet.Application.NumberOfRiders.Numbers.One
+		.MouseButton1Click
+		:Connect(function()
+			appendDigit(1)
+		end)
 
-	Tablet.Application.NumberOfRiders.Numbers.Backspace.MouseButton1Click:Connect(backspaceThroughput)
-	Tablet.Application.NumberOfRiders.Submit.MouseButton1Click:Connect(submitThroughput)
+	Tablet.Application.NumberOfRiders.Numbers.Two
+		.MouseButton1Click
+		:Connect(function()
+			appendDigit(2)
+		end)
 
-	Tablet.Application.Buttons.OpenRide.MouseButton1Click:Connect(OpenQueue)
-	Tablet.Application.Buttons.CloseRide.MouseButton1Click:Connect(PromptClosure)
+	Tablet.Application.NumberOfRiders.Numbers.Three
+		.MouseButton1Click
+		:Connect(function()
+			appendDigit(3)
+		end)
 
-	Tablet.Application.QueueTimes.Add.MouseButton1Click:Connect(AddQueue)
-	Tablet.Application.QueueTimes.Subtract.MouseButton1Click:Connect(SubtractQueue)
-	Tablet.Application.Heading.AttractionStatus.MouseButton1Click:Connect(PromptClosure)
+	Tablet.Application.NumberOfRiders.Numbers.Four
+		.MouseButton1Click
+		:Connect(function()
+			appendDigit(4)
+		end)
+
+	Tablet.Application.NumberOfRiders.Numbers.Five
+		.MouseButton1Click
+		:Connect(function()
+			appendDigit(5)
+		end)
+
+	Tablet.Application.NumberOfRiders.Numbers.Six
+		.MouseButton1Click
+		:Connect(function()
+			appendDigit(6)
+		end)
+
+	Tablet.Application.NumberOfRiders.Numbers.Seven
+		.MouseButton1Click
+		:Connect(function()
+			appendDigit(7)
+		end)
+
+	Tablet.Application.NumberOfRiders.Numbers.Eight
+		.MouseButton1Click
+		:Connect(function()
+			appendDigit(8)
+		end)
+
+	Tablet.Application.NumberOfRiders.Numbers.Nine
+		.MouseButton1Click
+		:Connect(function()
+			appendDigit(9)
+		end)
+
+	Tablet.Application.NumberOfRiders.Numbers.Zero
+		.MouseButton1Click
+		:Connect(function()
+
+			if config.CloseLock == true then
+				if Status == "Closed" then
+					return
+				end
+			end
+
+			if Throughput == 0 then
+				return
+			end
+
+			appendDigit(0)
+		end)
+
+	Tablet.Application.NumberOfRiders.Numbers.Backspace
+		.MouseButton1Click
+		:Connect(backspaceThroughput)
+
+	Tablet.Application.NumberOfRiders.Submit
+		.MouseButton1Click
+		:Connect(submitThroughput)
+
+	--------------------------------------------------
+	-- RIDE CONTROLS
+	--------------------------------------------------
+
+	Tablet.Application.Buttons.OpenRide
+		.MouseButton1Click
+		:Connect(OpenQueue)
+
+	Tablet.Application.Buttons.CloseRide
+		.MouseButton1Click
+		:Connect(PromptClosure)
+
+	--------------------------------------------------
+	-- QUEUE CONTROLS
+	--------------------------------------------------
+
+	Tablet.Application.QueueTimes.Add
+		.MouseButton1Click
+		:Connect(AddQueue)
+
+	Tablet.Application.QueueTimes.Subtract
+		.MouseButton1Click
+		:Connect(SubtractQueue)
+
+	Tablet.Application.Heading.AttractionStatus
+		.MouseButton1Click
+		:Connect(PromptClosure)
 end
 
 return RideApp
+```
