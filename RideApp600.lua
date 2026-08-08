@@ -26,6 +26,7 @@ function RideApp.Start(HQ)
 	local QueueScreen = HQ.QueueScreen.Screen.SurfaceGui
 	local Barrier = HQ.Barrier
 	local parkConfig = HQ.Parent.Parent.Configuration
+	
 
 	local QT = 0
 	local Status = "Closed"
@@ -36,6 +37,8 @@ function RideApp.Start(HQ)
 
 	local Throughput = 0
 
+
+	
 	-- Used when staff reopen the ride after normal closing time.
 	-- This allows training / extra ride time without the automatic
 	-- closing loop immediately closing it again.
@@ -51,6 +54,8 @@ function RideApp.Start(HQ)
 
 	HQ:SetAttribute("RideGroup", config.Group)
 
+
+	if Tablet:FindFirstChild("Login") then Tablet.Login.Visible = false end
 	--------------------------------------------------
 	-- TIME
 	--------------------------------------------------
