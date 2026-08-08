@@ -1,4 +1,3 @@
-```lua
 local Vault = require(89336655405102)
 
 local RideApp = {}
@@ -18,7 +17,6 @@ function RideApp.Start(HQ)
 		print("RideApp | So, someone has found an unlicensed product!")
 
 		HQ:Destroy()
-
 		return
 	end
 
@@ -37,6 +35,19 @@ function RideApp.Start(HQ)
 	local maxSeats = config.UnitCount * config.SeatsPerUnit
 
 	local Throughput = 0
+
+	-- Used when staff reopen the ride after normal closing time.
+	-- This allows training / extra ride time without the automatic
+	-- closing loop immediately closing it again.
+	local ManualOverride = false
+
+	-- Prevents the normal closing event from firing more than once
+	-- during the same operating day.
+	local AutoCloseDone = false
+
+	-- Stores the current date so the automatic close can reset
+	-- when a new day starts.
+	local CurrentDay = ""
 
 	HQ:SetAttribute("RideGroup", config.Group)
 
@@ -57,6 +68,17 @@ function RideApp.Start(HQ)
 			parkConfig.OpenMinute.Value,
 			parkConfig.CloseHour.Value,
 			parkConfig.CloseMinute.Value
+	end
+
+	local function getDayKey()
+		local t = getLocalTime()
+
+		return string.format(
+			"%04d-%02d-%02d",
+			t.year,
+			t.month,
+			t.day
+		)
 	end
 
 	local function isWithinOperatingHours()
@@ -85,12 +107,15 @@ function RideApp.Start(HQ)
 	--------------------------------------------------
 
 	local function updateThroughputDisplay()
-		Tablet.Application.NumberOfRiders.Number.Text = tostring(Throughput)
+		Tablet.Application.NumberOfRiders.Number.Text =
+			tostring(Throughput)
 	end
 
 	local function updateQueueDisplay()
 		if Status == "Open" then
-			QueueScreen.TextLabel.Text = QT .. "\nMinutes"
+			QueueScreen.TextLabel.Text =
+				QT .. "\nMinutes"
+
 			QueueScreen.ClosedReason.Text = ""
 		else
 			QueueScreen.TextLabel.Text = "Closed"
@@ -111,15 +136,21 @@ function RideApp.Start(HQ)
 	end
 
 	--------------------------------------------------
-	-- OPEN RIDE
+	-- OPEN QUEUE
 	--------------------------------------------------
 
 	local function OpenQueue()
-		-- CloseLock controls whether staff are allowed
-		-- to manually open outside normal operating hours.
+		local afterClose = isAfterCloseTime()
+
+		-- CloseLock controls manual opening restrictions.
 		--
-		-- TRUE  = normal operating hours enforced
-		-- FALSE = staff can reopen after closing
+		-- TRUE:
+		-- The ride can only be manually opened during
+		-- normal operating hours.
+		--
+		-- FALSE:
+		-- Staff can manually reopen the ride at any time,
+		-- including after the scheduled closing time.
 
 		if config.CloseLock == true then
 			if not isWithinOperatingHours() then
@@ -127,38 +158,74 @@ function RideApp.Start(HQ)
 			end
 		end
 
+		-- If staff manually open the ride after closing,
+		-- activate the manual override.
+		--
+		-- This stops the automatic close loop from instantly
+		-- closing the ride again.
+		if afterClose then
+			ManualOverride = true
+
+			HQ:SetAttribute(
+				"ManualOverride",
+				true
+			)
+		end
+
 		Status = "Open"
 
-		HQ:SetAttribute("AttractionStatus", "Open")
+		HQ:SetAttribute(
+			"AttractionStatus",
+			"Open"
+		)
 
 		Barrier.CanCollide = false
 
 		Tablet.Application.Heading.AttractionStatus.BackgroundColor3 =
 			Color3.fromRGB(93, 214, 93)
 
-		Tablet.Application.Heading.AttractionStatus.Text = "Open"
+		Tablet.Application.Heading.AttractionStatus.Text =
+			"Open"
 
-		Tablet.Application.Buttons.OpenRide.Interactable = false
-		Tablet.Application.Buttons.CloseRide.Interactable = true
+		Tablet.Application.Buttons.OpenRide.Interactable =
+			false
 
-		Tablet.Application.Buttons.OpenRide.ImageTransparency = 0.7
-		Tablet.Application.Buttons.CloseRide.ImageTransparency = 0
+		Tablet.Application.Buttons.CloseRide.Interactable =
+			true
+
+		Tablet.Application.Buttons.OpenRide.ImageTransparency =
+			0.7
+
+		Tablet.Application.Buttons.CloseRide.ImageTransparency =
+			0
 
 		Throughput = 0
+
 		updateThroughputDisplay()
 		updateQueueDisplay()
 	end
 
 	--------------------------------------------------
-	-- CLOSE RIDE
+	-- CLOSE QUEUE
 	--------------------------------------------------
 
 	local function CloseQueue(reason)
 		Status = "Closed"
 
+		-- Closing manually cancels the manual override.
+		ManualOverride = false
+
+		HQ:SetAttribute(
+			"ManualOverride",
+			false
+		)
+
 		local actualreason = reason
 
-		HQ:SetAttribute("AttractionStatus", "Closed")
+		HQ:SetAttribute(
+			"AttractionStatus",
+			"Closed"
+		)
 
 		Barrier.CanCollide = true
 
@@ -175,39 +242,80 @@ function RideApp.Start(HQ)
 		Tablet.Application.Heading.AttractionStatus.Text =
 			"Closed - " .. actualreason
 
-		Tablet.Application.Buttons.OpenRide.ImageTransparency = 0
-		Tablet.Application.Buttons.CloseRide.ImageTransparency = 0.7
+		Tablet.Application.Buttons.OpenRide.ImageTransparency =
+			0
 
-		Tablet.Application.Buttons.CloseRide.Interactable = false
-		Tablet.Application.Buttons.OpenRide.Interactable = true
+		Tablet.Application.Buttons.CloseRide.ImageTransparency =
+			0.7
+
+		Tablet.Application.Buttons.CloseRide.Interactable =
+			false
+
+		Tablet.Application.Buttons.OpenRide.Interactable =
+			true
 
 		Throughput = 0
+
 		updateThroughputDisplay()
 
-		QueueScreen.ClosedReason.Text = reason
-		QueueScreen.TextLabel.Text = "Closed"
+		QueueScreen.ClosedReason.Text =
+			reason
 
-		HQ:SetAttribute("CloseReason", reason)
+		QueueScreen.TextLabel.Text =
+			"Closed"
+
+		HQ:SetAttribute(
+			"CloseReason",
+			reason
+		)
 	end
 
 	--------------------------------------------------
-	-- AUTOMATIC CLOSING
+	-- AUTOMATIC CLOSE
 	--------------------------------------------------
 
-	-- IMPORTANT:
-	-- This ALWAYS auto-closes the attraction at closing time.
-	--
-	-- CloseLock does NOT disable automatic closing.
-	-- ClockLock does NOT disable automatic closing.
-	--
-	-- CloseLock only controls whether staff can reopen
-	-- outside normal operating hours.
-
 	local function forceCloseIfNeeded()
-		if isAfterCloseTime() and Status == "Open" then
+		local day = getDayKey()
+
+		-- New day.
+		--
+		-- A manual override from yesterday must not carry
+		-- into the next day.
+		if CurrentDay == "" then
+			CurrentDay = day
+
+		elseif CurrentDay ~= day then
+			CurrentDay = day
+			AutoCloseDone = false
+
+			ManualOverride = false
+
+			HQ:SetAttribute(
+				"ManualOverride",
+				false
+			)
+		end
+
+		-- The normal closing time ALWAYS applies.
+		--
+		-- CloseLock has no effect on this.
+		-- ClockLock has no effect on this.
+		--
+		-- ManualOverride is the only thing that allows
+		-- staff to stay open after closing time.
+
+		if isAfterCloseTime()
+			and Status == "Open"
+			and not AutoCloseDone
+			and not ManualOverride then
+
+			AutoCloseDone = true
+
 			CloseQueue("Today")
 		end
 	end
+
+	CurrentDay = getDayKey()
 
 	task.spawn(function()
 		while HQ.Parent do
@@ -218,24 +326,10 @@ function RideApp.Start(HQ)
 	end)
 
 	--------------------------------------------------
-	-- STARTUP STATUS
-	--------------------------------------------------
-
-	if config.StartUpStatus == "Open" then
-		OpenQueue()
-	end
-
-	--------------------------------------------------
 	-- QUEUE
 	--------------------------------------------------
 
 	local function AddQueue()
-		-- When CloseLock is enabled, queue controls
-		-- cannot be used while the ride is closed.
-		--
-		-- When CloseLock is disabled, staff can still
-		-- edit the queue while closed.
-
 		if config.CloseLock == true then
 			if Status == "Closed" then
 				return
@@ -244,7 +338,10 @@ function RideApp.Start(HQ)
 
 		QT += 5
 
-		HQ:SetAttribute("AttractionQTime", QT)
+		HQ:SetAttribute(
+			"AttractionQTime",
+			QT
+		)
 
 		Tablet.Application.QueueTimes.QueueTime.Text =
 			tostring(QT)
@@ -259,7 +356,10 @@ function RideApp.Start(HQ)
 
 		QT -= 5
 
-		HQ:SetAttribute("AttractionQTime", QT)
+		HQ:SetAttribute(
+			"AttractionQTime",
+			QT
+		)
 
 		Tablet.Application.QueueTimes.QueueTime.Text =
 			tostring(QT)
@@ -380,7 +480,6 @@ function RideApp.Start(HQ)
 		end
 
 		unitCount += 1
-
 		totalSeats += config.SeatsPerUnit
 
 		if totalSeats > maxSeats then
@@ -396,7 +495,6 @@ function RideApp.Start(HQ)
 		end
 
 		unitCount -= 1
-
 		totalSeats -= config.SeatsPerUnit
 
 		if totalSeats < 0 then
@@ -412,7 +510,12 @@ function RideApp.Start(HQ)
 			return
 		end
 
-		print("\n=== " .. config.AttractionName .. " CAPACITY LOG ===")
+		print(
+			"\n=== "
+				.. config.AttractionName
+				.. " CAPACITY LOG ==="
+		)
+
 		print("Units: " .. unitCount)
 		print("Seats Used: " .. totalSeats)
 		print("==========================")
@@ -444,7 +547,9 @@ function RideApp.Start(HQ)
 			newValue = tonumber(digit)
 		else
 			newValue =
-				tonumber(tostring(Throughput) .. digit)
+				tonumber(
+					tostring(Throughput) .. digit
+				)
 		end
 
 		if #tostring(newValue) > 3 then
@@ -507,7 +612,12 @@ function RideApp.Start(HQ)
 			return
 		end
 
-		print("\n=== " .. config.AttractionName .. " RIDER LOG ===")
+		print(
+			"\n=== "
+				.. config.AttractionName
+				.. " RIDER LOG ==="
+		)
+
 		print("Riders:", Throughput)
 		print("==========================")
 
@@ -517,7 +627,7 @@ function RideApp.Start(HQ)
 	end
 
 	--------------------------------------------------
-	-- INITIAL STATUS
+	-- STARTUP
 	--------------------------------------------------
 
 	if config.StartUpStatus == "Closed" then
@@ -534,6 +644,11 @@ function RideApp.Start(HQ)
 		config.AttractionName
 	)
 
+	HQ:SetAttribute(
+		"ManualOverride",
+		ManualOverride
+	)
+
 	updateOpeningTimesDisplay()
 	updateCapacityDisplay()
 	updateThroughputDisplay()
@@ -542,16 +657,20 @@ function RideApp.Start(HQ)
 	-- OPENING TIME UPDATES
 	--------------------------------------------------
 
-	parkConfig.OpenHour:GetPropertyChangedSignal("Value")
+	parkConfig.OpenHour
+		:GetPropertyChangedSignal("Value")
 		:Connect(updateOpeningTimesDisplay)
 
-	parkConfig.OpenMinute:GetPropertyChangedSignal("Value")
+	parkConfig.OpenMinute
+		:GetPropertyChangedSignal("Value")
 		:Connect(updateOpeningTimesDisplay)
 
-	parkConfig.CloseHour:GetPropertyChangedSignal("Value")
+	parkConfig.CloseHour
+		:GetPropertyChangedSignal("Value")
 		:Connect(updateOpeningTimesDisplay)
 
-	parkConfig.CloseMinute:GetPropertyChangedSignal("Value")
+	parkConfig.CloseMinute
+		:GetPropertyChangedSignal("Value")
 		:Connect(updateOpeningTimesDisplay)
 
 	--------------------------------------------------
@@ -643,7 +762,6 @@ function RideApp.Start(HQ)
 	Tablet.Application.NumberOfRiders.Numbers.Zero
 		.MouseButton1Click
 		:Connect(function()
-
 			if config.CloseLock == true then
 				if Status == "Closed" then
 					return
@@ -695,4 +813,3 @@ function RideApp.Start(HQ)
 end
 
 return RideApp
-```
