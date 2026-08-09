@@ -37,16 +37,30 @@ if not remotes then
 	remotes.Parent = ReplicatedStorage
 end
 
-if not remotes:FindFirstChild("LoginRequest") then
-	local loginRequest = Instance.new("RemoteEvent")
-	loginRequest.Name = "LoginRequest"
-	loginRequest.Parent = remotes
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local remotes = ReplicatedStorage:FindFirstChild("RideApp")
+
+if not remotes then
+	remotes = Instance.new("Folder")
+	remotes.Name = "RideApp"
+	remotes.Parent = ReplicatedStorage
 end
 
-	if not remotes:FindFirstChild("LoginResult") then
-	local loginRequest = Instance.new("RemoteEvent")
-	loginRequest.Name = "LoginResult"
-	loginRequest.Parent = remotes
+local LoginRequest = remotes:FindFirstChild("LoginRequest")
+
+if not LoginRequest then
+	LoginRequest = Instance.new("RemoteEvent")
+	LoginRequest.Name = "LoginRequest"
+	LoginRequest.Parent = remotes
+end
+
+local LoginResult = remotes:FindFirstChild("LoginResult")
+
+if not LoginResult then
+	LoginResult = Instance.new("RemoteEvent")
+	LoginResult.Name = "LoginResult"
+	LoginResult.Parent = remotes
 end
 	
 	local QT = 0
