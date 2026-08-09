@@ -27,10 +27,26 @@ function RideApp.Start(HQ)
 	local Barrier = HQ.Barrier
 	local parkConfig = HQ.Parent.Parent.Configuration
 
-if not game.ReplicatedStorage:FindFirstChild("RideApp") then
-	local remotes = Instance.new("Folder")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local remotes = ReplicatedStorage:FindFirstChild("RideApp")
+
+if not remotes then
+	remotes = Instance.new("Folder")
 	remotes.Name = "RideApp"
-	remotes.Parent = game.ReplicatedStorage
+	remotes.Parent = ReplicatedStorage
+end
+
+if not remotes:FindFirstChild("LoginRequest") then
+	local loginRequest = Instance.new("RemoteEvent")
+	loginRequest.Name = "LoginRequest"
+	loginRequest.Parent = remotes
+end
+
+	if not remotes:FindFirstChild("LoginResult") then
+	local loginRequest = Instance.new("RemoteEvent")
+	loginRequest.Name = "LoginResult"
+	loginRequest.Parent = remotes
 end
 	
 	local QT = 0
