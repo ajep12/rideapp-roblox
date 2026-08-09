@@ -27,11 +27,12 @@ function RideApp.Start(HQ)
 	local Barrier = HQ.Barrier
 	local parkConfig = HQ.Parent.Parent.Configuration
 
-	local remotes = instance.New("Folder")
-	remotes.Name = "RideApp"
-	remotes.Parent = game.ReplicatedStorage
+	if game.ReplicatedStorage:FindFirstChild("RideApp") then
+		local remotes = Instance.new("Folder")
+		remotes.Name = "RideApp"
+		remotes.Parent = game.ReplicatedStorage
+	end
 	
-
 	local QT = 0
 	local Status = "Closed"
 
