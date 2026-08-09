@@ -26,6 +26,10 @@ function RideApp.Start(HQ)
 	local QueueScreen = HQ.QueueScreen.Screen.SurfaceGui
 	local Barrier = HQ.Barrier
 	local parkConfig = HQ.Parent.Parent.Configuration
+
+	local remotes = instance.New("Folder")
+	remotes.Name = "RideApp"
+	remotes.Parent = game.ReplicatedStorage
 	
 
 	local QT = 0
