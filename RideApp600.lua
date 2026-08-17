@@ -81,6 +81,7 @@ function RideApp.Start(HQ)
 	local AutoCloseDone = false
 	local CurrentDay = ""
 
+	-- [player] = role
 	local SignedInStaff = {}
 
 	--------------------------------------------------
@@ -90,13 +91,14 @@ function RideApp.Start(HQ)
 	HQ:SetAttribute("RideGroup", config.Group)
 	HQ:SetAttribute("AttractionName", config.AttractionName)
 	HQ:SetAttribute("ManualOverride", ManualOverride)
+	HQ:SetAttribute("AttractionStatus", "Closed")
 
 	if Tablet:FindFirstChild("Login") then
 		Tablet.Login.Visible = false
 	end
 
 	--------------------------------------------------
-	-- STAFF LOGIN
+	-- STAFF QUALIFICATIONS
 	--------------------------------------------------
 
 	local function getAvailableRoles(player)
@@ -113,17 +115,22 @@ function RideApp.Start(HQ)
 
 			if qualification
 				and qualification:IsA("BoolValue")
-				and qualification.Value then
+				and qualification.Value == true then
 
 				table.insert(roles, {
 					Role = roleName,
-					Qualification = qualificationName
+					Qualification = qualificationName,
+					Attraction = config.AttractionName
 				})
 			end
 		end
 
 		return roles
 	end
+
+	--------------------------------------------------
+	-- STAFF COUNT
+	--------------------------------------------------
 
 	local function getStaffCount()
 		local count = 0
@@ -136,19 +143,32 @@ function RideApp.Start(HQ)
 	end
 
 	--------------------------------------------------
-	-- LOGIN REQUEST
+	-- STAFF LOGIN
 	--------------------------------------------------
 
 	LoginRequest.OnServerEvent:Connect(function(player, action, value, attractionName)
 
-		--------------------------------------------------
-		-- ATTRACTION CHECK
-		--------------------------------------------------
+		print(
+			"RideApp | Request from "
+				.. player.Name
+				.. " | Action: "
+				.. tostring(action)
+				.. " | Attraction: "
+				.. tostring(attractionName)
+		)
 
-		-- Every RideApp attraction shares the same RemoteEvent.
-		-- Only the attraction that was requested should answer.
+		--------------------------------------------------
+		-- CHECK ATTRACTION
+		--------------------------------------------------
 
 		if attractionName ~= config.AttractionName then
+			print(
+				"RideApp | Ignoring request for "
+					.. tostring(attractionName)
+					.. " on "
+					.. config.AttractionName
+			)
+
 			return
 		end
 
@@ -158,6 +178,8 @@ function RideApp.Start(HQ)
 
 		if action == "Login" then
 
+			local enteredPin = tostring(value or "")
+
 			local qualifications = player:FindFirstChild("Qualifications")
 
 			if not qualifications then
@@ -165,6 +187,8 @@ function RideApp.Start(HQ)
 					player,
 					false,
 					"Qualifications not found",
+					nil,
+					nil,
 					config.AttractionName
 				)
 
@@ -192,6 +216,8 @@ function RideApp.Start(HQ)
 					player,
 					false,
 					"PIN not found",
+					nil,
+					nil,
 					config.AttractionName
 				)
 
@@ -202,16 +228,13 @@ function RideApp.Start(HQ)
 			-- CHECK PIN
 			--------------------------------------------------
 
-			local enteredPin = tostring(value or "")
 			local storedPin = tostring(pin.Value or "")
 
 			print(
-				"RideApp | "
+				"RideApp | PIN attempt from "
 					.. player.Name
-					.. " attempting login to "
+					.. " at "
 					.. config.AttractionName
-					.. " | Entered PIN: "
-					.. enteredPin
 			)
 
 			if enteredPin == "" then
@@ -219,6 +242,8 @@ function RideApp.Start(HQ)
 					player,
 					false,
 					"Enter your PIN",
+					nil,
+					nil,
 					config.AttractionName
 				)
 
@@ -230,6 +255,8 @@ function RideApp.Start(HQ)
 					player,
 					false,
 					"PIN is not configured",
+					nil,
+					nil,
 					config.AttractionName
 				)
 
@@ -241,11 +268,20 @@ function RideApp.Start(HQ)
 					player,
 					false,
 					"Incorrect PIN",
+					nil,
+					nil,
 					config.AttractionName
 				)
 
 				return
 			end
+
+			print(
+				"RideApp | Correct PIN for "
+					.. player.Name
+					.. " at "
+					.. config.AttractionName
+			)
 
 			--------------------------------------------------
 			-- ALREADY SIGNED IN
@@ -256,6 +292,8 @@ function RideApp.Start(HQ)
 					player,
 					false,
 					"You are already signed in",
+					nil,
+					nil,
 					config.AttractionName
 				)
 
@@ -273,6 +311,8 @@ function RideApp.Start(HQ)
 					player,
 					false,
 					"Maximum staff reached",
+					nil,
+					nil,
 					config.AttractionName
 				)
 
@@ -280,25 +320,18 @@ function RideApp.Start(HQ)
 			end
 
 			--------------------------------------------------
-			-- GET ROLES
+			-- GET QUALIFIED ROLES
 			--------------------------------------------------
 
 			local roles = getAvailableRoles(player)
-
-			print(
-				"RideApp | "
-					.. player.Name
-					.. " has "
-					.. #roles
-					.. " available role(s) for "
-					.. config.AttractionName
-			)
 
 			if #roles == 0 then
 				LoginResult:FireClient(
 					player,
 					false,
 					"You are not qualified for this attraction",
+					nil,
+					nil,
 					config.AttractionName
 				)
 
@@ -306,7 +339,7 @@ function RideApp.Start(HQ)
 			end
 
 			--------------------------------------------------
-			-- CHOOSE ROLE
+			-- SEND ROLE SELECTION
 			--------------------------------------------------
 
 			LoginResult:FireClient(
@@ -314,7 +347,17 @@ function RideApp.Start(HQ)
 				true,
 				"ChooseRole",
 				roles,
+				nil,
 				config.AttractionName
+			)
+
+			print(
+				"RideApp | "
+					.. player.Name
+					.. " passed PIN for "
+					.. config.AttractionName
+					.. " | Roles available: "
+					.. #roles
 			)
 
 			return
@@ -331,11 +374,17 @@ function RideApp.Start(HQ)
 					player,
 					false,
 					"You are already signed in",
+					nil,
+					nil,
 					config.AttractionName
 				)
 
 				return
 			end
+
+			--------------------------------------------------
+			-- MAX STAFF
+			--------------------------------------------------
 
 			if config.MaxStaff
 				and getStaffCount() >= config.MaxStaff then
@@ -344,14 +393,20 @@ function RideApp.Start(HQ)
 					player,
 					false,
 					"Maximum staff reached",
+					nil,
+					nil,
 					config.AttractionName
 				)
 
 				return
 			end
 
+			--------------------------------------------------
+			-- GET ROLES
+			--------------------------------------------------
+
 			local roles = getAvailableRoles(player)
-			local selectedRole
+			local selectedRole = nil
 
 			for _, role in ipairs(roles) do
 				if role.Role == value then
@@ -365,6 +420,8 @@ function RideApp.Start(HQ)
 					player,
 					false,
 					"Invalid role",
+					nil,
+					nil,
 					config.AttractionName
 				)
 
@@ -423,6 +480,8 @@ function RideApp.Start(HQ)
 				return
 			end
 
+			local oldRole = SignedInStaff[player]
+
 			SignedInStaff[player] = nil
 
 			player:SetAttribute(
@@ -444,6 +503,8 @@ function RideApp.Start(HQ)
 				player,
 				true,
 				"LoggedOut",
+				nil,
+				nil,
 				config.AttractionName
 			)
 
@@ -452,11 +513,17 @@ function RideApp.Start(HQ)
 					.. player.Name
 					.. " logged out of "
 					.. config.AttractionName
+					.. " as "
+					.. oldRole
 			)
 
 			return
 		end
 	end)
+
+	--------------------------------------------------
+	-- PLAYER REMOVING
+	--------------------------------------------------
 
 	Players.PlayerRemoving:Connect(function(player)
 		SignedInStaff[player] = nil
@@ -922,10 +989,9 @@ function RideApp.Start(HQ)
 		if Throughput == 0 then
 			newValue = tonumber(digit)
 		else
-			newValue =
-				tonumber(
-					tostring(Throughput) .. digit
-				)
+			newValue = tonumber(
+				tostring(Throughput) .. digit
+			)
 		end
 
 		if #tostring(newValue) > 3 then
@@ -1125,7 +1191,6 @@ function RideApp.Start(HQ)
 	Tablet.Application.NumberOfRiders.Numbers.Zero
 		.MouseButton1Click
 		:Connect(function()
-
 			if config.CloseLock == true
 				and Status == "Closed" then
 				return
