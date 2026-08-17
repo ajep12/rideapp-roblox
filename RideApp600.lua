@@ -8,6 +8,10 @@ function RideApp.Start(HQ)
 		return
 	end
 
+	--------------------------------------------------
+	-- LICENCE
+	--------------------------------------------------
+
 	if not Vault:WhitelistAync({
 		productUUID = "774c8ef5-def6-4288-9eba-39da694732b4",
 		vaultUUID = "a385fb95-68de-450b-8b05-1551d4703676",
@@ -19,14 +23,24 @@ function RideApp.Start(HQ)
 		return
 	end
 
+	--------------------------------------------------
+	-- CONFIGURATION
+	--------------------------------------------------
+
 	local configuration = HQ:FindFirstChild("Configuration")
 
 	if not configuration or not configuration:IsA("ModuleScript") then
-		warn("RideApp | Configuration ModuleScript not found")
+		warn("RideApp | Configuration ModuleScript not found in " .. HQ:GetFullName())
 		return
 	end
 
 	local config = require(configuration)
+
+	print("RideApp | Starting attraction: " .. tostring(config.AttractionName))
+
+	--------------------------------------------------
+	-- REFERENCES
+	--------------------------------------------------
 
 	local Tablet = HQ.RideAppTablet.Union2.SurfaceGui
 	local QueueScreen = HQ.QueueScreen.Screen.SurfaceGui
@@ -63,6 +77,8 @@ function RideApp.Start(HQ)
 		LoginResult.Name = "LoginResult"
 		LoginResult.Parent = remotes
 	end
+
+	print("RideApp | Remotes ready for " .. tostring(config.AttractionName))
 
 	--------------------------------------------------
 	-- VARIABLES
@@ -149,12 +165,12 @@ function RideApp.Start(HQ)
 	LoginRequest.OnServerEvent:Connect(function(player, action, value, attractionName)
 
 		print(
-			"RideApp | Request from "
-				.. player.Name
-				.. " | Action: "
-				.. tostring(action)
-				.. " | Attraction: "
-				.. tostring(attractionName)
+			"RideApp | REQUEST RECEIVED"
+				.. " | Player: " .. player.Name
+				.. " | Action: " .. tostring(action)
+				.. " | Value: " .. tostring(value)
+				.. " | Attraction: " .. tostring(attractionName)
+				.. " | This attraction: " .. tostring(config.AttractionName)
 		)
 
 		--------------------------------------------------
@@ -162,15 +178,29 @@ function RideApp.Start(HQ)
 		--------------------------------------------------
 
 		if attractionName ~= config.AttractionName then
-			print(
-				"RideApp | Ignoring request for "
-					.. tostring(attractionName)
-					.. " on "
-					.. config.AttractionName
+
+			warn(
+				"RideApp | Attraction mismatch!"
+					.. " Requested: " .. tostring(attractionName)
+					.. " | Server: " .. tostring(config.AttractionName)
+			)
+
+			LoginResult:FireClient(
+				player,
+				false,
+				"Wrong attraction",
+				nil,
+				nil,
+				config.AttractionName
 			)
 
 			return
 		end
+
+		print(
+			"RideApp | Attraction matched: "
+				.. tostring(config.AttractionName)
+		)
 
 		--------------------------------------------------
 		-- LOGIN
@@ -180,9 +210,21 @@ function RideApp.Start(HQ)
 
 			local enteredPin = tostring(value or "")
 
+			print(
+				"RideApp | Login attempt by "
+					.. player.Name
+					.. " at "
+					.. config.AttractionName
+			)
+
+			--------------------------------------------------
+			-- QUALIFICATIONS
+			--------------------------------------------------
+
 			local qualifications = player:FindFirstChild("Qualifications")
 
 			if not qualifications then
+
 				LoginResult:FireClient(
 					player,
 					false,
@@ -206,6 +248,7 @@ function RideApp.Start(HQ)
 			end
 
 			if not pin then
+
 				warn(
 					"RideApp | "
 						.. player.Name
@@ -238,6 +281,7 @@ function RideApp.Start(HQ)
 			)
 
 			if enteredPin == "" then
+
 				LoginResult:FireClient(
 					player,
 					false,
@@ -251,6 +295,7 @@ function RideApp.Start(HQ)
 			end
 
 			if storedPin == "" then
+
 				LoginResult:FireClient(
 					player,
 					false,
@@ -264,6 +309,12 @@ function RideApp.Start(HQ)
 			end
 
 			if enteredPin ~= storedPin then
+
+				print(
+					"RideApp | Incorrect PIN from "
+						.. player.Name
+				)
+
 				LoginResult:FireClient(
 					player,
 					false,
@@ -288,6 +339,7 @@ function RideApp.Start(HQ)
 			--------------------------------------------------
 
 			if SignedInStaff[player] then
+
 				LoginResult:FireClient(
 					player,
 					false,
@@ -326,6 +378,7 @@ function RideApp.Start(HQ)
 			local roles = getAvailableRoles(player)
 
 			if #roles == 0 then
+
 				LoginResult:FireClient(
 					player,
 					false,
@@ -342,6 +395,13 @@ function RideApp.Start(HQ)
 			-- SEND ROLE SELECTION
 			--------------------------------------------------
 
+			print(
+				"RideApp | Sending "
+					.. #roles
+					.. " roles to "
+					.. player.Name
+			)
+
 			LoginResult:FireClient(
 				player,
 				true,
@@ -352,12 +412,8 @@ function RideApp.Start(HQ)
 			)
 
 			print(
-				"RideApp | "
+				"RideApp | Role selection sent to "
 					.. player.Name
-					.. " passed PIN for "
-					.. config.AttractionName
-					.. " | Roles available: "
-					.. #roles
 			)
 
 			return
@@ -370,6 +426,7 @@ function RideApp.Start(HQ)
 		if action == "SelectRole" then
 
 			if SignedInStaff[player] then
+
 				LoginResult:FireClient(
 					player,
 					false,
@@ -409,13 +466,20 @@ function RideApp.Start(HQ)
 			local selectedRole = nil
 
 			for _, role in ipairs(roles) do
+
 				if role.Role == value then
 					selectedRole = role
 					break
 				end
+
 			end
 
+			--------------------------------------------------
+			-- INVALID ROLE
+			--------------------------------------------------
+
 			if not selectedRole then
+
 				LoginResult:FireClient(
 					player,
 					false,
@@ -477,6 +541,16 @@ function RideApp.Start(HQ)
 		if action == "Logout" then
 
 			if not SignedInStaff[player] then
+
+				LoginResult:FireClient(
+					player,
+					false,
+					"You are not signed in",
+					nil,
+					nil,
+					config.AttractionName
+				)
+
 				return
 			end
 
@@ -519,6 +593,24 @@ function RideApp.Start(HQ)
 
 			return
 		end
+
+		--------------------------------------------------
+		-- UNKNOWN ACTION
+		--------------------------------------------------
+
+		warn(
+			"RideApp | Unknown action: "
+				.. tostring(action)
+		)
+
+		LoginResult:FireClient(
+			player,
+			false,
+			"Unknown action",
+			nil,
+			nil,
+			config.AttractionName
+		)
 	end)
 
 	--------------------------------------------------
@@ -618,6 +710,7 @@ function RideApp.Start(HQ)
 	--------------------------------------------------
 
 	local function OpenQueue()
+
 		local afterClose = isAfterCloseTime()
 
 		if config.CloseLock == true
@@ -626,6 +719,7 @@ function RideApp.Start(HQ)
 		end
 
 		if afterClose then
+
 			ManualOverride = true
 
 			HQ:SetAttribute(
@@ -672,6 +766,7 @@ function RideApp.Start(HQ)
 	--------------------------------------------------
 
 	local function CloseQueue(reason)
+
 		Status = "Closed"
 
 		ManualOverride = false
@@ -736,12 +831,15 @@ function RideApp.Start(HQ)
 	--------------------------------------------------
 
 	local function forceCloseIfNeeded()
+
 		local day = getDayKey()
 
 		if CurrentDay == "" then
+
 			CurrentDay = day
 
 		elseif CurrentDay ~= day then
+
 			CurrentDay = day
 			AutoCloseDone = false
 			ManualOverride = false
@@ -766,10 +864,14 @@ function RideApp.Start(HQ)
 	CurrentDay = getDayKey()
 
 	task.spawn(function()
+
 		while HQ.Parent do
+
 			forceCloseIfNeeded()
+
 			task.wait(60)
 		end
+
 	end)
 
 	--------------------------------------------------
@@ -777,6 +879,7 @@ function RideApp.Start(HQ)
 	--------------------------------------------------
 
 	local function AddQueue()
+
 		if config.CloseLock == true
 			and Status == "Closed" then
 			return
@@ -796,6 +899,7 @@ function RideApp.Start(HQ)
 	end
 
 	local function SubtractQueue()
+
 		if QT <= 0 then
 			return
 		end
@@ -818,6 +922,7 @@ function RideApp.Start(HQ)
 	--------------------------------------------------
 
 	local function PromptClosure()
+
 		local frame = Tablet.Application.ClosureFrame
 		local b = frame.Buttons
 
@@ -893,6 +998,7 @@ function RideApp.Start(HQ)
 	--------------------------------------------------
 
 	local function updateCapacityDisplay()
+
 		Tablet.Application.RideCapacity.Unit.Text =
 			tostring(unitCount)
 
@@ -901,24 +1007,29 @@ function RideApp.Start(HQ)
 	end
 
 	local function addSeat()
+
 		if totalSeats >= maxSeats then
 			return
 		end
 
 		totalSeats += 1
+
 		updateCapacityDisplay()
 	end
 
 	local function removeSeat()
+
 		if totalSeats <= 0 then
 			return
 		end
 
 		totalSeats -= 1
+
 		updateCapacityDisplay()
 	end
 
 	local function addUnit()
+
 		if unitCount >= config.UnitCount then
 			return
 		end
@@ -934,6 +1045,7 @@ function RideApp.Start(HQ)
 	end
 
 	local function removeUnit()
+
 		if unitCount <= 0 then
 			return
 		end
@@ -949,6 +1061,7 @@ function RideApp.Start(HQ)
 	end
 
 	local function submitCapacity()
+
 		if totalSeats == 0 then
 			print("Submit blocked: no seats")
 			return
@@ -975,6 +1088,7 @@ function RideApp.Start(HQ)
 	--------------------------------------------------
 
 	local function appendDigit(digit)
+
 		if config.CloseLock == true
 			and Status == "Closed" then
 			return
@@ -1004,6 +1118,7 @@ function RideApp.Start(HQ)
 	end
 
 	local function addThroughput()
+
 		if config.CloseLock == true
 			and Status == "Closed" then
 			return
@@ -1019,6 +1134,7 @@ function RideApp.Start(HQ)
 	end
 
 	local function backspaceThroughput()
+
 		if config.CloseLock == true
 			and Status == "Closed" then
 			return
@@ -1042,6 +1158,7 @@ function RideApp.Start(HQ)
 	end
 
 	local function submitThroughput()
+
 		if config.CloseLock == true
 			and Status == "Closed" then
 			return
@@ -1191,6 +1308,7 @@ function RideApp.Start(HQ)
 	Tablet.Application.NumberOfRiders.Numbers.Zero
 		.MouseButton1Click
 		:Connect(function()
+
 			if config.CloseLock == true
 				and Status == "Closed" then
 				return
@@ -1238,6 +1356,15 @@ function RideApp.Start(HQ)
 	Tablet.Application.Heading.AttractionStatus
 		.MouseButton1Click
 		:Connect(PromptClosure)
+
+	--------------------------------------------------
+	-- READY
+	--------------------------------------------------
+
+	print(
+		"RideApp | READY | "
+			.. tostring(config.AttractionName)
+	)
 end
 
 return RideApp
