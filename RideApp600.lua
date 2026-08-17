@@ -19,7 +19,14 @@ function RideApp.Start(HQ)
 		return
 	end
 
-	local config = require(HQ.Configuration)
+	local configuration = HQ:FindFirstChild("Configuration")
+
+	if not configuration or not configuration:IsA("ModuleScript") then
+		warn("RideApp | Configuration ModuleScript not found")
+		return
+	end
+
+	local config = require(configuration)
 
 	local Tablet = HQ.RideAppTablet.Union2.SurfaceGui
 	local QueueScreen = HQ.QueueScreen.Screen.SurfaceGui
@@ -129,7 +136,13 @@ function RideApp.Start(HQ)
 	end
 
 	LoginRequest.OnServerEvent:Connect(function(player, action, value)
+
+		--------------------------------------------------
+		-- LOGIN
+		--------------------------------------------------
+
 		if action == "Login" then
+
 			local qualifications = player:FindFirstChild("Qualifications")
 
 			if not qualifications then
@@ -138,28 +151,85 @@ function RideApp.Start(HQ)
 					false,
 					"Qualifications not found"
 				)
+
 				return
 			end
+
+			--------------------------------------------------
+			-- FIND PIN
+			--------------------------------------------------
 
 			local pin = qualifications:FindFirstChild("PIN")
 
 			if not pin then
+				pin = qualifications:FindFirstChild("Pin")
+			end
+
+			if not pin then
+				warn(
+					"RideApp | "
+						.. player.Name
+						.. " has no PIN value"
+				)
+
 				LoginResult:FireClient(
 					player,
 					false,
 					"PIN not found"
 				)
+
 				return
 			end
 
-			if tostring(value) ~= tostring(pin.Value) then
+			--------------------------------------------------
+			-- CHECK PIN
+			--------------------------------------------------
+
+			local enteredPin = tostring(value or "")
+			local storedPin = tostring(pin.Value or "")
+
+			print(
+				"RideApp | PIN attempt from "
+					.. player.Name
+					.. " | Entered: "
+					.. enteredPin
+					.. " | Stored: "
+					.. storedPin
+			)
+
+			if enteredPin == "" then
+				LoginResult:FireClient(
+					player,
+					false,
+					"Enter your PIN"
+				)
+
+				return
+			end
+
+			if storedPin == "" then
+				LoginResult:FireClient(
+					player,
+					false,
+					"PIN is not configured"
+				)
+
+				return
+			end
+
+			if enteredPin ~= storedPin then
 				LoginResult:FireClient(
 					player,
 					false,
 					"Incorrect PIN"
 				)
+
 				return
 			end
+
+			--------------------------------------------------
+			-- ALREADY SIGNED IN
+			--------------------------------------------------
 
 			if SignedInStaff[player] then
 				LoginResult:FireClient(
@@ -167,8 +237,13 @@ function RideApp.Start(HQ)
 					false,
 					"You are already signed in"
 				)
+
 				return
 			end
+
+			--------------------------------------------------
+			-- MAX STAFF
+			--------------------------------------------------
 
 			if config.MaxStaff
 				and getStaffCount() >= config.MaxStaff then
@@ -178,8 +253,13 @@ function RideApp.Start(HQ)
 					false,
 					"Maximum staff reached"
 				)
+
 				return
 			end
+
+			--------------------------------------------------
+			-- GET ROLES
+			--------------------------------------------------
 
 			local roles = getAvailableRoles(player)
 
@@ -189,8 +269,13 @@ function RideApp.Start(HQ)
 					false,
 					"You are not qualified for this attraction"
 				)
+
 				return
 			end
+
+			--------------------------------------------------
+			-- CHOOSE ROLE
+			--------------------------------------------------
 
 			LoginResult:FireClient(
 				player,
@@ -202,13 +287,19 @@ function RideApp.Start(HQ)
 			return
 		end
 
+		--------------------------------------------------
+		-- SELECT ROLE
+		--------------------------------------------------
+
 		if action == "SelectRole" then
+
 			if SignedInStaff[player] then
 				LoginResult:FireClient(
 					player,
 					false,
 					"You are already signed in"
 				)
+
 				return
 			end
 
@@ -220,6 +311,7 @@ function RideApp.Start(HQ)
 					false,
 					"Maximum staff reached"
 				)
+
 				return
 			end
 
@@ -239,8 +331,13 @@ function RideApp.Start(HQ)
 					false,
 					"Invalid role"
 				)
+
 				return
 			end
+
+			--------------------------------------------------
+			-- SIGN IN
+			--------------------------------------------------
 
 			SignedInStaff[player] = selectedRole.Role
 
@@ -279,7 +376,12 @@ function RideApp.Start(HQ)
 			return
 		end
 
+		--------------------------------------------------
+		-- LOGOUT
+		--------------------------------------------------
+
 		if action == "Logout" then
+
 			if not SignedInStaff[player] then
 				return
 			end
@@ -313,6 +415,8 @@ function RideApp.Start(HQ)
 					.. " logged out of "
 					.. config.AttractionName
 			)
+
+			return
 		end
 	end)
 
@@ -531,6 +635,7 @@ function RideApp.Start(HQ)
 
 		if CurrentDay == "" then
 			CurrentDay = day
+
 		elseif CurrentDay ~= day then
 			CurrentDay = day
 			AutoCloseDone = false
@@ -982,6 +1087,7 @@ function RideApp.Start(HQ)
 	Tablet.Application.NumberOfRiders.Numbers.Zero
 		.MouseButton1Click
 		:Connect(function()
+
 			if config.CloseLock == true
 				and Status == "Closed" then
 				return
