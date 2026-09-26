@@ -37,7 +37,7 @@ function RideApp.Start(HQ)
 	local config = require(configuration)
 
 	print("RideApp | Starting attraction: " .. tostring(config.AttractionName))
-
+	print("RideApp | Yo guys! RideFlow by aj will be coming out soon!")
 	--------------------------------------------------
 	-- REFERENCES
 	--------------------------------------------------
